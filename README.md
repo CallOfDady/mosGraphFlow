@@ -41,6 +41,10 @@ python geo_ROSMAP_tmain_gin.py
 ```bash
 python geo_ROSMAP_tmain_gformer.py
 ```
+### 2.3 Run analysis on mosGraphFlow results
+```bash
+python geo_ROSMAP_tmain_mosgraphflow_analysis.py
+```
 
 ## 3. Signaling network interaction analysis
 The R programing language will be used here, combined with python for data processing, to visualize the result in the file 'Plot_momic.py', with the attention mechanism in model mosGraphFlow.
