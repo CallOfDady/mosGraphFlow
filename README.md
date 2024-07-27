@@ -59,7 +59,7 @@ python ROSMAP_analysis_path_edge.py
 python Plot_momic.py
 ```
 
-Following is an signaling network interaction analysis exmaple. For AD/non-AD Top 70
+Following is an signaling network interaction analysis exmaple. For AD/non-AD Top 70 gene features
 * Top 70 important nodes signaling network interaction in AD samples
 ![](./ROSMAP-plot/AD_70.png)
 
