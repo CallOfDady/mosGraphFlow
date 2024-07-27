@@ -12,7 +12,7 @@ Check the jupyter nodebook 'ROSMAP_union_raw_data_process_AD.ipynb' or 'ROSMAP_u
 ### 1.1 For AD vs. non-AD classification
 Use 'ROSMAP_union_raw_data_process_AD.ipynb'
 
-### 1.2 For female vs. male in AD dataset classification
+### 1.2 For female vs. male within AD samples classification
 Use 'ROSMAP_union_raw_data_process_gender_in_AD.ipynb'
 
 ## 2. Run the Graph Neural Network Model
@@ -49,6 +49,12 @@ python geo_ROSMAP_tmain_mosgraphflow_analysis.py
 ## 3. Signaling network interaction analysis
 The R programing language will be used here, combined with python for data processing, to visualize the result in the file 'Plot_momic.py', with the attention mechanism in model mosGraphFlow.
 
+### 3.1 Calculate average pathway attention of two sample groups for selected tasks (AD vs. non-AD, female vs. male within AD samples)
+```bash
+python ROSMAP_analysis_path_edge.py
+```
+
+### 3.2 Data processing and visualization
 ```bash
 python Plot_momic.py
 ```
