@@ -102,38 +102,6 @@ class PathNetAnalyse():
             comtemp_survival_specific_combined_sp_khop_df.to_csv('./' + dataset + '-analysis' + '/fold_' + str(fold_n) + '_survival/survival' + str(survival_label_num) + '.csv', index=False, header=True)
             
 
-    def convertion_undirect_adj(self, khop_sp_survival_label_df, hop_str, sp_str, SignalingPath, survival_label, dataset):
-        # [node_num_dict.csv]
-        node_num_dict_df = pd.read_csv('./' + dataset + '-analysis' + '/node_num_dict.csv')
-        num_node = node_num_dict_df.shape[0]
-        adj = np.zeros((num_node, num_node))
-        # import pdb; pdb.set_trace()
-        for row in khop_sp_survival_label_df.itertuples():
-            row_idx = row[1] - 1
-            col_idx = row[2] - 1
-            attention = row[3]
-            adj[row_idx, col_idx] = attention
-        up_adj = np.triu(adj, k=0)
-        down_adj = np.tril(adj, k=0)
-        combined_adj = (up_adj + down_adj.T) / 2.0
-        combined_adj = np.triu(combined_adj, k=0)
-        combined_adj_sparse = sparse.csr_matrix(combined_adj)
-        combined_adj_sparse = sparse_mx_to_torch_sparse_tensor(combined_adj_sparse)
-        combined_adj_edgeindex = combined_adj_sparse._indices() + 1
-        combined_adj_weight = combined_adj_sparse._values()
-        new_khop_sp_survival_label_df = pd.DataFrame({'From': list(combined_adj_edgeindex.numpy()[0]),
-                                                 'To': list(combined_adj_edgeindex.numpy()[1]),
-                                                 'Attention': list(combined_adj_weight.numpy())})
-        new_khop_sp_survival_label_df['Hop'] = [hop_str] * (new_khop_sp_survival_label_df.shape[0])
-        new_khop_sp_survival_label_df['SignalingPath'] = [SignalingPath] * (new_khop_sp_survival_label_df.shape[0])
-        new_khop_sp_survival_label_df['SpNotation'] = [sp_str] * (new_khop_sp_survival_label_df.shape[0])
-        new_khop_sp_survival_label_df['individualID'] = [survival_label] * (new_khop_sp_survival_label_df.shape[0])
-        new_khop_sp_survival_label_df = new_khop_sp_survival_label_df.sort_values(by = ['From', 'To'], ascending = [True, True])
-        if hop_str == 'hop1':
-            print(survival_label, hop_str, sp_str, new_khop_sp_survival_label_df.shape)
-        return new_khop_sp_survival_label_df
-
-
 class AverageFoldPath():
     def __init__(self):
         pass
