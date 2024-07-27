@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-#from torch_scatter import scatter_add
+from torch_scatter import scatter_add
 from torch_geometric.nn import MessagePassing
 from torch_geometric.nn import global_add_pool, global_mean_pool, global_max_pool, GlobalAttention, Set2Set
 from torch_geometric.nn.inits import glorot, zeros

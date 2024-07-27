@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import utils
 from geo_loader.read_geograph import read_batch
 from geo_loader.geograph_sampler import GeoGraphLoader
-from enc_dec.geo_tsgnn_decoder import TSGNNDecoder
+from enc_dec.geo_mosgraphflow_decoder import TSGNNDecoder
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix, precision_score, recall_score
 
 
@@ -56,14 +56,14 @@ def arg_parse():
                         model = '0', # 'load'
                         lr = 0.002,
                         clip = 2.0,
-                        batch_size = 8,
+                        batch_size = 16,
                         num_workers = 1,
                         num_epochs = 80,
                         input_dim = 10,
                         hidden_dim = 10,
                         output_dim = 30,
                         decoder_dim = 150,
-                        dropout = 0.1)
+                        dropout = 0.02)
     return parser.parse_args()
 
 
@@ -72,10 +72,6 @@ def learning_rate_schedule(args, dl_input_num, iteration_num, e1, e2, e3, e4):
     t2 = 0.0005
     t3 = 0.00025
     t4 = 0.0001
-    # t1 = 0.002  # Adjusted based on new initial learning rate
-    # t2 = 0.001  # Adjusted proportionally
-    # t3 = 0.0005  # Adjusted proportionally
-    # t4 = 0.0002  # Adjusted proportionally
     epoch_iteration = int(dl_input_num / args.batch_size)
     l1 = (args.lr - t1) / (e1 * epoch_iteration)
     l2 = (t1 - t2) / (e2 * epoch_iteration)
@@ -125,6 +121,19 @@ def sparse_mx_to_torch_sparse_tensor(sparse_mx):
     shape = torch.Size(sparse_mx.shape)
     return torch.sparse.FloatTensor(indices, values, shape)
 
+def write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list):
+    best_model_info = (
+        f'\n-------------Fold: {fold_n} -------------\n'
+        f'\n-------------BEST TEST ACCURACY MODEL ID INFO: {max_test_acc_id} -------------\n'
+        '--- TRAIN ---\n'
+        f'BEST MODEL TRAIN LOSS: {epoch_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TRAIN ACCURACY: {epoch_acc_list[max_test_acc_id - 1]}\n'
+        '--- TEST ---\n'
+        f'BEST MODEL TEST LOSS: {test_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TEST ACCURACY: {test_acc_list[max_test_acc_id - 1]}\n'
+    )
+    with open(os.path.join(path, 'best_model_info.txt'), 'w') as file:
+        file.write(best_model_info)
 
 def train_geotsgnn_model(dataset_loader, model, device, args, learning_rate, graph_output_folder):
     optimizer = torch.optim.Adam(filter(lambda p : p.requires_grad, model.parameters()), lr=learning_rate, eps=1e-7, weight_decay=1e-20)
@@ -183,16 +192,18 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
     e4 = 30
     epoch_loss_list = []
     epoch_acc_list = []
+    epoch_var_list = []
     test_loss_list = []
     test_acc_list = []
+    test_var_list = []
     # Clean result previous epoch_i_pred files
-    folder_name = 'epoch_' + str(epoch_num)
-    path = './' + dataset + '-result/%s' % (folder_name)
+    folder_name = 'fold_' + str(fold_n)
+    path = './' + dataset + '-result/mosgraphflow/%s' % (folder_name)
     unit = 1
-    while os.path.exists('./' + dataset + '-result') == False:
-        os.mkdir('./' + dataset + '-result')
+    while os.path.exists('./' + dataset + '-result/mosgraphflow/') == False:
+        os.mkdir('./' + dataset + '-result/mosgraphflow/')
     while os.path.exists(path):
-        path = './' + dataset + '-result/%s_%d' % (folder_name, unit)
+        path = './' + dataset + '-result/mosgraphflow/%s_%d' % (folder_name, unit)
         unit += 1
     os.mkdir(path)
     # import pdb; pdb.set_trace()
@@ -206,6 +217,7 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
         epoch_ypred = np.zeros((1, 1))
         upper_index = 0
         batch_loss_list = []
+        batch_ypred_list = []
         dl_input_num = xTr.shape[0]
         for index in range(0, dl_input_num, batch_size):
             if (index + batch_size) < dl_input_num:
@@ -224,6 +236,7 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
             batch_loss_list.append(batch_loss)
             # PRESERVE PREDICTION OF BATCH TRAINING DATA
             batch_ypred = (Variable(batch_ypred).data).cpu().numpy().reshape(-1, 1)
+            batch_ypred_list.append(batch_ypred)
             epoch_ypred = np.vstack((epoch_ypred, batch_ypred))
         epoch_loss = np.mean(batch_loss_list)
         print('TRAIN EPOCH ' + str(i) + ' LOSS: ', epoch_loss)
@@ -247,18 +260,28 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
         print('\n-------------EPOCH TRAINING LOSS LIST: -------------')
         print(epoch_loss_list)
 
+        epoch_ypred_all = np.vstack(batch_ypred_list)
+        epoch_variance = np.var(epoch_ypred_all)
+        epoch_var_list.append(epoch_variance)
+
+        print('EPOCH ' + str(i) + ' VARIANCE: ', epoch_variance)
+
         # # # Test model on test dataset
         # fold_n = 1
         test_save_path = path
-        test_acc, test_loss, tmp_test_input_df = test_geotsgnn(prog_args, fold_n, model, test_save_path, device, graph_output_folder, i)
+        test_acc, test_loss, tmp_test_input_df, test_var = test_geotsgnn(prog_args, fold_n, model, test_save_path, device, graph_output_folder, i)
         test_acc_list.append(test_acc)
         test_loss_list.append(test_loss)
+        test_var_list.append(test_var)
         tmp_test_input_df.to_csv(path + '/TestPred' + str(i) + '.txt', index=False, header=True)
         print('\n-------------EPOCH TEST ACCURACY LIST: -------------')
         print(test_acc_list)
         print('\n-------------EPOCH TEST MSE LOSS LIST: -------------')
         print(test_loss_list)
         # SAVE BEST TEST MODEL
+        # if test_acc > max_test_acc:
+        #     max_test_acc = test_acc
+        #     max_test_acc_id = i
         if test_acc >= max_test_acc and test_acc < accuracy:
             max_test_acc = test_acc
             max_test_acc_id = i
@@ -272,6 +295,7 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
         print('BEST MODEL TEST LOSS: ', test_loss_list[max_test_acc_id - 1])
         print('BEST MODEL TEST ACCURACY: ', test_acc_list[max_test_acc_id - 1])
         torch.save(model.state_dict(), path + '/best_train_model.pt')
+        write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list)
 
         epoch_loss_list_df = pd.DataFrame(epoch_loss_list, columns=['LOSS'])
         epoch_loss_list_df.to_csv(path + '/TrainLossList.csv', index=False)
@@ -279,11 +303,17 @@ def train_geotsgnn(args, fold_n, load_path, iteration_num, device, graph_output_
         epoch_acc_list_df = pd.DataFrame(epoch_acc_list, columns=['Accuracy'])
         epoch_acc_list_df.to_csv(path + '/TrainPredlist.csv', index=False)
 
+        epoch_var_df = pd.DataFrame(epoch_var_list, columns=['Variance'])
+        epoch_var_df.to_csv(path + '/TrainVarList.csv', index=False)
+
         test_loss_list_df = pd.DataFrame(test_loss_list, columns=['LOSS'])
         test_loss_list_df.to_csv(path + '/TestLossList.csv', index=False)
 
         test_acc_list_df = pd.DataFrame(test_acc_list, columns=['Accuracy'])
         test_acc_list_df.to_csv(path + '/TestPredlist.csv', index=False)
+
+        epoch_var_df = pd.DataFrame(test_var_list, columns=['Variance'])
+        epoch_var_df.to_csv(path + '/TestVarList.csv', index=False)
 
 def test_geotsgnn_model(dataset_loader, model, device, args, graph_output_folder):
     batch_loss = 0
@@ -325,6 +355,7 @@ def test_geotsgnn(args, fold_n, model, test_save_path, device, graph_output_fold
     all_ypred = np.zeros((1, 1))
     upper_index = 0
     batch_loss_list = []
+    batch_ypred_list = []
     for index in range(0, dl_input_num, batch_size):
         if (index + batch_size) < dl_input_num:
             upper_index = index + batch_size
@@ -340,12 +371,15 @@ def test_geotsgnn(args, fold_n, model, test_save_path, device, graph_output_fold
         # PRESERVE PREDICTION OF BATCH TEST DATA
         batch_ypred = (Variable(batch_ypred).data).cpu().numpy().reshape(-1, 1)
         all_ypred = np.vstack((all_ypred, batch_ypred))
+        batch_ypred_list.append(batch_ypred)
     test_loss = np.mean(batch_loss_list)
     print('EPOCH ' + str(i) + ' TEST LOSS: ', test_loss)
     # Preserve accuracy for every epoch
     all_ypred = np.delete(all_ypred, 0, axis = 0)
     all_ypred_lists = list(all_ypred)
     all_ypred_list = [item for elem in all_ypred_lists for item in elem]
+    all_ypred_all = np.vstack(batch_ypred_list)
+    test_variance = np.var(all_ypred_all)
     score_lists = list(yTe)
     score_list = [item for elem in score_lists for item in elem]
     test_dict = {'label': score_list, 'prediction': all_ypred_list}
@@ -354,7 +388,7 @@ def test_geotsgnn(args, fold_n, model, test_save_path, device, graph_output_fold
     accuracy = accuracy_score(tmp_test_input_df['label'], tmp_test_input_df['prediction'])
     print('EPOCH ' + str(i) + ' TEST ACCURACY: ', accuracy)
     test_acc = accuracy
-    return test_acc, test_loss, tmp_test_input_df
+    return test_acc, test_loss, tmp_test_input_df, test_variance
 
 
 
@@ -377,18 +411,20 @@ if __name__ == "__main__":
     # Dataset Selection
     dataset = 'ROSMAP'
     
-    ### Train the model
-    # Train [FOLD-1x]
-    fold_n = 5
-    # prog_args.model = 'load'
-    # load_path = './result/epoch_60_1/best_train_model.pt'
-    load_path = ''
-    graph_output_folder = dataset + '-graph-data'
-    yTr = np.load('./' + graph_output_folder + '/form_data/yTr' + str(fold_n) + '.npy')
-    # yTr = np.load('./' + graph_output_folder + '/form_data/y_split1.npy')
-    unique_numbers, occurrences = np.unique(yTr, return_counts=True)
-    num_class = len(unique_numbers)
-    dl_input_num = yTr.shape[0]
-    epoch_iteration = int(dl_input_num / prog_args.batch_size)
-    start_iter_num = prog_args.num_epochs * epoch_iteration
-    train_geotsgnn(prog_args, fold_n, load_path, start_iter_num, device, graph_output_folder, num_class)
+    for fold in range(1, 6):
+        fold_n = fold
+        ### Train the model
+        # Train [FOLD-1x]
+        # fold_n = 1
+        # prog_args.model = 'load'
+        # load_path = './result/epoch_60_1/best_train_model.pt'
+        load_path = ''
+        graph_output_folder = dataset + '-graph-data'
+        yTr = np.load('./' + graph_output_folder + '/form_data/yTr' + str(fold_n) + '.npy')
+        # yTr = np.load('./' + graph_output_folder + '/form_data/y_split1.npy')
+        unique_numbers, occurrences = np.unique(yTr, return_counts=True)
+        num_class = len(unique_numbers)
+        dl_input_num = yTr.shape[0]
+        epoch_iteration = int(dl_input_num / prog_args.batch_size)
+        start_iter_num = prog_args.num_epochs * epoch_iteration
+        train_geotsgnn(prog_args, fold_n, load_path, start_iter_num, device, graph_output_folder, num_class)

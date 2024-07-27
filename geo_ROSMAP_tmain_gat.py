@@ -111,6 +111,19 @@ def build_geogat_model(args, device, graph_output_folder, num_class):
     model = model.to(device)
     return model
 
+def write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list):
+    best_model_info = (
+        f'\n-------------Fold: {fold_n} -------------\n'
+        f'\n-------------BEST TEST ACCURACY MODEL ID INFO: {max_test_acc_id} -------------\n'
+        '--- TRAIN ---\n'
+        f'BEST MODEL TRAIN LOSS: {epoch_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TRAIN ACCURACY: {epoch_acc_list[max_test_acc_id - 1]}\n'
+        '--- TEST ---\n'
+        f'BEST MODEL TEST LOSS: {test_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TEST ACCURACY: {test_acc_list[max_test_acc_id - 1]}\n'
+    )
+    with open(os.path.join(path, 'best_model_info.txt'), 'w') as file:
+        file.write(best_model_info)
 
 def train_geogat_model(dataset_loader, model, device, args, learning_rate):
     optimizer = torch.optim.Adam(filter(lambda p : p.requires_grad, model.parameters()), lr=learning_rate, eps=1e-7, weight_decay=1e-10)
@@ -175,13 +188,13 @@ def train_geogat(args, fold_n, load_path, iteration_num, device, graph_output_fo
     test_loss_list = []
     test_acc_list = []
     # Clean result previous epoch_i_pred files
-    folder_name = 'epoch_' + str(epoch_num)
-    path = './' + dataset + '-result/%s' % (folder_name)
+    folder_name = 'fold_' + str(fold_n)
+    path = './' + dataset + '-result/gat/%s' % (folder_name)
     unit = 1
-    while os.path.exists('./' + dataset + '-result') == False:
-        os.mkdir('./' + dataset + '-result')
+    while os.path.exists('./' + dataset + '-result/gat/') == False:
+        os.mkdir('./' + dataset + '-result/gat/')
     while os.path.exists(path):
-        path = './' + dataset + '-result/%s_%d' % (folder_name, unit)
+        path = './' + dataset + '-result/gat/%s_%d' % (folder_name, unit)
         unit += 1
     os.mkdir(path)
     # import pdb; pdb.set_trace()
@@ -261,32 +274,8 @@ def train_geogat(args, fold_n, load_path, iteration_num, device, graph_output_fo
         print('BEST MODEL TEST LOSS: ', test_loss_list[max_test_acc_id - 1])
         print('BEST MODEL TEST ACCURACY: ', test_acc_list[max_test_acc_id - 1])
         torch.save(model.state_dict(), path + '/best_train_model.pt')
-        # Save the best model details to a CSV file
-        best_model_data = {
-        'TRAIN LOSS': epoch_loss_list[max_test_acc_id - 1],
-        'TRAIN ACCURACY': epoch_acc_list[max_test_acc_id - 1],
-        'TEST LOSS': test_loss_list[max_test_acc_id - 1],
-        'TEST ACCURACY': test_acc_list[max_test_acc_id - 1]
-        }
+        write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list)
 
-# Create a DataFrame from the data
-        best_model_df = pd.DataFrame([best_model_data])
-
-# Save the DataFrame to a CSV file
-        best_model_df.to_csv(path + '/gat_best_model_info'+ str(fold_n) +'.csv', index=False)
-
-
-        epoch_loss_list_df = pd.DataFrame(epoch_loss_list, columns=['LOSS'])
-        epoch_loss_list_df.to_csv(path + '/TrainLossList.csv', index=False)
-
-        epoch_acc_list_df = pd.DataFrame(epoch_acc_list, columns=['Accuracy'])
-        epoch_acc_list_df.to_csv(path + '/TrainPredlist.csv', index=False)
-
-        test_loss_list_df = pd.DataFrame(test_loss_list, columns=['LOSS'])
-        test_loss_list_df.to_csv(path + '/TestLossList.csv', index=False)
-
-        test_acc_list_df = pd.DataFrame(test_acc_list, columns=['Accuracy'])
-        test_acc_list_df.to_csv(path + '/TestPredlist.csv', index=False)
 
 def test_geogat_model(dataset_loader, model, device, args):
     batch_loss = 0
@@ -379,7 +368,8 @@ if __name__ == "__main__":
     
     ### Train the model
     # Train [FOLD-1x]
-    for fold_n in range(1, 6):
+    for fold in range(1, 6):
+       fold_n = fold
     # prog_args.model = 'load'
     # load_path = './result/epoch_60_1/best_train_model.pt'
        load_path = ''

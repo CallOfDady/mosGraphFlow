@@ -71,10 +71,6 @@ def learning_rate_schedule(args, dl_input_num, iteration_num, e1, e2, e3, e4):
     t2 = 0.001
     t3 = 0.0005
     t4 = 0.0001
-    # t1 = args.lr * 0.5  # 0.0001
-    # t2 = t1 * 0.5       # 0.00005
-    # t3 = t2 * 0.5       # 0.000025
-    # t4 = t3 * 0.5       # 0.0000125
     epoch_iteration = int(dl_input_num / args.batch_size)
     l1 = (args.lr - t1) / (e1 * epoch_iteration)
     l2 = (t1 - t2) / (e2 * epoch_iteration)
@@ -115,6 +111,19 @@ def build_geogformer_model(args, device, graph_output_folder, num_class):
     model = model.to(device)
     return model
 
+def write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list):
+    best_model_info = (
+        f'\n-------------Fold: {fold_n} -------------\n'
+        f'\n-------------BEST TEST ACCURACY MODEL ID INFO: {max_test_acc_id} -------------\n'
+        '--- TRAIN ---\n'
+        f'BEST MODEL TRAIN LOSS: {epoch_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TRAIN ACCURACY: {epoch_acc_list[max_test_acc_id - 1]}\n'
+        '--- TEST ---\n'
+        f'BEST MODEL TEST LOSS: {test_loss_list[max_test_acc_id - 1]}\n'
+        f'BEST MODEL TEST ACCURACY: {test_acc_list[max_test_acc_id - 1]}\n'
+    )
+    with open(os.path.join(path, 'best_model_info.txt'), 'w') as file:
+        file.write(best_model_info)
 
 def train_geogformer_model(dataset_loader, model, device, args, learning_rate):
     optimizer = torch.optim.Adam(filter(lambda p : p.requires_grad, model.parameters()), lr=learning_rate, eps=1e-7, weight_decay=1e-10)
@@ -179,13 +188,13 @@ def train_geogformer(args, fold_n, load_path, iteration_num, device, graph_outpu
     test_loss_list = []
     test_acc_list = []
     # Clean result previous epoch_i_pred files
-    folder_name = 'epoch_' + str(epoch_num)
-    path = './' + dataset + '-result/%s' % (folder_name)
+    folder_name = 'fold_' + str(fold_n)
+    path = './' + dataset + '-result/gformer/%s' % (folder_name)
     unit = 1
-    while os.path.exists('./' + dataset + '-result') == False:
-        os.mkdir('./' + dataset + '-result')
+    while os.path.exists('./' + dataset + '-result/gformer/') == False:
+        os.mkdir('./' + dataset + '-result/gformer/')
     while os.path.exists(path):
-        path = './' + dataset + '-result/%s_%d' % (folder_name, unit)
+        path = './' + dataset + '-result/gformer/%s_%d' % (folder_name, unit)
         unit += 1
     os.mkdir(path)
     # import pdb; pdb.set_trace()
@@ -251,7 +260,7 @@ def train_geogformer(args, fold_n, load_path, iteration_num, device, graph_outpu
         print('\n-------------EPOCH TEST MSE LOSS LIST: -------------')
         print(test_loss_list)
         # SAVE BEST TEST MODEL
-        if test_acc >= max_test_acc and test_acc < accuracy:
+        if test_acc >= max_test_acc and test_acc < accuracy and epoch_loss != 'nan':
             max_test_acc = test_acc
             max_test_acc_id = i
             # torch.save(model.state_dict(), path + '/best_train_model'+ str(i) +'.pt')
@@ -264,33 +273,7 @@ def train_geogformer(args, fold_n, load_path, iteration_num, device, graph_outpu
         print('BEST MODEL TEST LOSS: ', test_loss_list[max_test_acc_id - 1])
         print('BEST MODEL TEST ACCURACY: ', test_acc_list[max_test_acc_id - 1])
         torch.save(model.state_dict(), path + '/best_train_model.pt')
-
-        # Save the best model details to a CSV file
-        best_model_data = {
-        'TRAIN LOSS': epoch_loss_list[max_test_acc_id - 1],
-        'TRAIN ACCURACY': epoch_acc_list[max_test_acc_id - 1],
-        'TEST LOSS': test_loss_list[max_test_acc_id - 1],
-        'TEST ACCURACY': test_acc_list[max_test_acc_id - 1]
-        }
-
-# Create a DataFrame from the data
-        best_model_df = pd.DataFrame([best_model_data])
-
-# Save the DataFrame to a CSV file
-        best_model_df.to_csv(path + '/gformer_best_model_info'+ str(fold_n) +'.csv', index=False)
-
-        
-        epoch_loss_list_df = pd.DataFrame(epoch_loss_list, columns=['LOSS'])
-        epoch_loss_list_df.to_csv(path + '/TrainLossList.csv', index=False)
-
-        epoch_acc_list_df = pd.DataFrame(epoch_acc_list, columns=['Accuracy'])
-        epoch_acc_list_df.to_csv(path + '/TrainPredlist.csv', index=False)
-
-        test_loss_list_df = pd.DataFrame(test_loss_list, columns=['LOSS'])
-        test_loss_list_df.to_csv(path + '/TestLossList.csv', index=False)
-
-        test_acc_list_df = pd.DataFrame(test_acc_list, columns=['Accuracy'])
-        test_acc_list_df.to_csv(path + '/TestPredlist.csv', index=False)
+        write_best_model_info(fold_n, path, max_test_acc_id, epoch_loss_list, epoch_acc_list, test_loss_list, test_acc_list)
 
 
 def test_geogformer_model(dataset_loader, model, device, args):
@@ -383,16 +366,17 @@ if __name__ == "__main__":
     
     ### Train the model
     # Train [FOLD-1x]
-    for fold_n in range(1, 6):
-    # prog_args.model = 'load'
-    # load_path = './result/epoch_60_1/best_train_model.pt'
-       load_path = ''
-       graph_output_folder = dataset + '-graph-data'
-       yTr = np.load('./' + graph_output_folder + '/form_data/yTr' + str(fold_n) + '.npy')
-    # yTr = np.load('./' + graph_output_folder + '/form_data/y_split1.npy')
-       unique_numbers, occurrences = np.unique(yTr, return_counts=True)
-       num_class = len(unique_numbers)
-       dl_input_num = yTr.shape[0]
-       epoch_iteration = int(dl_input_num / prog_args.batch_size)
-       start_iter_num = prog_args.num_epochs * epoch_iteration
-       train_geogformer(prog_args, fold_n, load_path, start_iter_num, device, graph_output_folder, num_class)
+    for fold in range(1, 6):
+        fold_n = fold
+        # prog_args.model = 'load'
+        # load_path = './result/epoch_60_1/best_train_model.pt'
+        load_path = ''
+        graph_output_folder = dataset + '-graph-data'
+        yTr = np.load('./' + graph_output_folder + '/form_data/yTr' + str(fold_n) + '.npy')
+        # yTr = np.load('./' + graph_output_folder + '/form_data/y_split1.npy')
+        unique_numbers, occurrences = np.unique(yTr, return_counts=True)
+        num_class = len(unique_numbers)
+        dl_input_num = yTr.shape[0]
+        epoch_iteration = int(dl_input_num / prog_args.batch_size)
+        start_iter_num = prog_args.num_epochs * epoch_iteration
+        train_geogformer(prog_args, fold_n, load_path, start_iter_num, device, graph_output_folder, num_class)

@@ -12,7 +12,7 @@ from torch.autograd import Variable
 import utils
 from geo_loader.read_geograph import read_batch
 from geo_loader.geograph_sampler import GeoGraphLoader
-from enc_dec.geo_analysis_tsgnn_decoder import TSGNNDecoder
+from enc_dec.geo_mosgraphflow_analysis_decoder import TSGNNDecoder
 
 # PARSE ARGUMENTS FROM COMMAND LINE
 def arg_parse():
@@ -52,19 +52,19 @@ def arg_parse():
                         parallel = False,
                         add_self = '0', # 'add'
                         model = '0', # 'load'
-                        lr = 0.002,
+                        lr = 0.001,
                         clip = 2.0,
-                        batch_size = 2,
+                        batch_size = 1,
                         num_workers = 1,
                         num_epochs = 100,
                         input_dim = 10,
                         hidden_dim = 10,
                         output_dim = 30,
                         decoder_dim = 150,
-                        dropout = 0.02)
+                        dropout = 0.1)
     return parser.parse_args()
 
-def build_geotsgnn_model(args, device, graph_output_folder,num_class):
+def build_geotsgnn_model(args, device, graph_output_folder,num_class, fold_n):
     print('--- BUILDING UP TSGNN MODEL ... ---')
     # GET PARAMETERS
     # [num_gene, num_drug, (adj)node_num]
@@ -78,7 +78,7 @@ def build_geotsgnn_model(args, device, graph_output_folder,num_class):
     # import pdb; pdb.set_trace()
     # BUILD UP MODEL
     model = TSGNNDecoder(input_dim=args.input_dim, hidden_dim=args.hidden_dim, embedding_dim=args.output_dim, decoder_dim=args.decoder_dim,
-                node_num=node_num, num_edge=num_edge, device=device,graph_output_folder=graph_output_folder,num_class=num_class)
+                node_num=node_num, num_edge=num_edge, device=device,graph_output_folder=graph_output_folder,num_class=num_class, fold_n=fold_n)
     model = model.to(device)
     return model
 
@@ -198,16 +198,16 @@ if __name__ == "__main__":
 
     k = 5
     for fold_n in np.arange(1, k + 1):
-        os.makedirs('./ROSMAP-analysis/fold_' + str(fold_n), exist_ok=True)
+        os.makedirs('./' + dataset + '-analysis/fold_' + str(fold_n), exist_ok=True)
         graph_output_folder = dataset + '-graph-data'
         yTr = np.load('./' + graph_output_folder + '/form_data/yTr' + str(fold_n) + '.npy')
         unique_numbers, occurrences = np.unique(yTr, return_counts=True)
         num_class = len(unique_numbers)
         print("num:" ,num_class)
 
-        model = build_geotsgnn_model(prog_args, device, graph_output_folder,num_class)
+        model = build_geotsgnn_model(prog_args, device, graph_output_folder,num_class, fold_n)
         ### TEST THE MODEL
-        analysis_load_path = './' + dataset + '-result/tsgnn/fold_' + str(fold_n) + '/best_train_model.pt'
+        analysis_load_path = './' + dataset + '-result/mosgraphflow/fold_' + str(fold_n) + '/best_train_model.pt'
         analysis_save_path = './' + dataset + '-analysis/fold_' + str(fold_n)
         model.load_state_dict(torch.load(analysis_load_path, map_location=device))
         analysis_geotsgnn(prog_args, fold_n, model, analysis_save_path, device, graph_output_folder)
