@@ -58,6 +58,8 @@ python ROSMAP_analysis_path_edge.py
 ```bash
 python Plot_momic.py
 ```
+Before you run Plot_momic.py, you should configure your own R home directory in part 6 of the script.
+![image](https://github.com/user-attachments/assets/15f056eb-2c08-44f9-b740-22b1649c902f)
 
 Following is an signaling network interaction analysis exmaple. For AD/non-AD Top 70 gene features
 * Top 70 important nodes signaling network interaction in AD samples
